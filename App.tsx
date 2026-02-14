@@ -157,7 +157,8 @@ const App: React.FC = () => {
       showPartials: true, 
       showConnections: true, 
       autoPauseOnTrigger: false,
-      showGrid: true 
+      showGrid: true,
+      showInfoCard: true
   });
   const [triggeredEvents, setTriggeredEvents] = useState<TriggeredEvent[]>([]); 
   
@@ -795,6 +796,7 @@ const App: React.FC = () => {
                     value={chartType}
                     options={[
                         { value: 'Candlestick', label: 'Candles' },
+                        { value: 'HeikinAshi', label: 'Heikin Ashi' },
                         { value: 'Line', label: 'Line' },
                         { value: 'Bar', label: 'Bars' }
                     ]}
@@ -879,7 +881,8 @@ const App: React.FC = () => {
       
       <div ref={sidebarRef} className="flex flex-col border-l border-[var(--border)] h-full flex-shrink-0 relative bg-[var(--background)] shadow-2xl z-40 transition-colors duration-200" style={{ width: sidebarWidth }}>
           <div className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-50 hover:bg-blue-500/50 transition-colors" onMouseDown={startResizing} />
-          <div className="flex-shrink-0 flex items-center gap-1 px-3 py-2 border-b border-[var(--border)] bg-[var(--surface-secondary)]" style={{ height: '48px' }}>
+          {/* Menu principal header - ajustado para usar bg-[var(--background)] garantindo tom Navy no modo escuro */}
+          <div className="flex-shrink-0 flex items-center gap-1 px-3 py-2 border-b border-[var(--border)] bg-[var(--background)]" style={{ height: '48px' }}>
               <button onClick={() => setActiveMainRightPanel('trade')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeMainRightPanel === 'trade' ? 'bg-blue-600 text-white shadow-md' : 'text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-blue-500'}`}>
                   <Wallet size={14} /> Trades
               </button>

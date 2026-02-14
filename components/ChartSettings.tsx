@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Eye, GitCommit, Link2, Pause, GripHorizontal, X, Palette, Grid3X3, CandlestickChart } from 'lucide-react';
+import { Eye, GitCommit, Link2, Pause, GripHorizontal, X, Palette, Grid3X3, CandlestickChart, Info } from 'lucide-react';
 import { ChartSettings, Theme, ChartTheme } from '../types';
 
 interface ChartSettingsProps {
@@ -155,7 +155,7 @@ const ChartSettingsPanel: React.FC<ChartSettingsProps> = ({ settings, onUpdate, 
       >
         <div className="flex items-center gap-2 pointer-events-none">
           <GripHorizontal size={14} className="text-slate-400" />
-          <h3 className={`text-[10px] font-black uppercase tracking-widest ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+          <h3 className={`text-[10px] font-black uppercase tracking-widest ${theme === 'dark' ? 'text-slate-400' : 'text-slate-50'}`}>
             Chart Settings
           </h3>
         </div>
@@ -211,6 +211,13 @@ const ChartSettingsPanel: React.FC<ChartSettingsProps> = ({ settings, onUpdate, 
                 icon={<Pause size={14} />}
                 isChecked={settings.autoPauseOnTrigger}
                 onToggle={() => onUpdate({ ...settings, autoPauseOnTrigger: !settings.autoPauseOnTrigger })}
+                theme={theme}
+                />
+                <Toggle 
+                label="Mostrar Cartão Informativo"
+                icon={<Info size={14} />}
+                isChecked={settings.showInfoCard}
+                onToggle={() => onUpdate({ ...settings, showInfoCard: !settings.showInfoCard })}
                 theme={theme}
                 />
             </>

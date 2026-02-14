@@ -62,6 +62,10 @@ const Chart: React.FC<ChartProps> = ({
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line"> | null>(null);
   
+  // Use a ref to track chart settings within crosshair move listener
+  const settingsRef = useRef(chartSettings);
+  useEffect(() => { settingsRef.current = chartSettings; }, [chartSettings]);
+
   const connectorSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<"Line" | "Histogram">>>(new Map());
   const activePositionLinesRef = useRef<Map<string, { entry?: IPriceLine, sl?: IPriceLine, tp?: IPriceLine, exit?: IPriceLine }>>(new Map());
@@ -156,6 +160,7 @@ const Chart: React.FC<ChartProps> = ({
         if (!tooltipRef.current || !chartContainerRef.current) return;
 
         if (
+            !settingsRef.current.showInfoCard || // Respect setting
             param.point === undefined ||
             !param.time ||
             param.point.x < 0 ||

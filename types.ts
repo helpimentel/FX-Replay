@@ -1,5 +1,3 @@
-
-
 export interface OHLC {
   time: number;
   open: number;
@@ -173,6 +171,7 @@ export interface ChartSettings {
   showConnections: boolean;
   autoPauseOnTrigger: boolean;
   showGrid: boolean;
+  showInfoCard: boolean;
 }
 
 // NEW: Chart Visual Theme Interface
