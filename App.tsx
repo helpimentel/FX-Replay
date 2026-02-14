@@ -840,8 +840,8 @@ const App: React.FC = () => {
 
           <main className="flex-1 flex flex-col relative overflow-hidden bg-[var(--background)] transition-colors duration-200">
               <DrawingToolbar activeTool={activeDrawingTool} onSelectTool={setActiveDrawingTool} theme={theme} onClearAll={() => setDrawings([])} isVisible={showDrawingToolbar} />
-              <div className="flex-1 flex flex-col relative">
-                  <div className="flex-1 relative isolate"> 
+              <div className="flex-1 flex flex-col relative min-h-0">
+                  <div className="flex-1 relative isolate w-full min-h-0 pb-2"> 
                      {/* Always render Chart if we are in replay mode or have data, handling empty data gracefully inside Chart */}
                      {(chartData.length >= 0 || isLoading) && ( 
                          <Chart 
