@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Zap, Layout, SlidersHorizontal, BarChart3, Settings, PlayCircle, Loader2, RotateCcw, ChevronDown, Pause, AlertTriangle, Paintbrush, Wallet, TrendingUp, Eye, FileText, List, PenTool, History } from 'lucide-react';
+import { Zap, Layout, SlidersHorizontal, BarChart3, Settings, PlayCircle, Loader2, RotateCcw, ChevronDown, Pause, AlertTriangle, Paintbrush, Wallet, TrendingUp, Eye, FileText, List, PenTool, History, Check } from 'lucide-react';
 import Chart from './components/Chart';
 import Controls from './components/Controls';
 import TradePanel from './components/TradePanel';
@@ -42,6 +42,64 @@ const DEFAULT_CHART_THEME_LIGHT: ChartTheme = {
     wickDown: '#f23645'
 };
 
+// --- HELPER COMPONENT: CUSTOM HEADER DROPDOWN ---
+interface HeaderDropdownProps {
+    value: string;
+    options: { value: string; label: string }[];
+    isOpen: boolean;
+    onToggle: () => void;
+    onSelect: (val: string) => void;
+    theme: Theme;
+    icon?: React.ReactNode;
+    alignRight?: boolean;
+    width?: string;
+}
+
+const HeaderDropdown: React.FC<HeaderDropdownProps> = ({ value, options, isOpen, onToggle, onSelect, theme, icon, alignRight, width = 'w-24' }) => {
+    // Styles based on theme
+    const buttonBg = theme === 'dark' ? 'bg-[#1e222d] border-[#2a2e39] hover:border-blue-500/50 hover:bg-[#2a2e39]' : 'bg-white border-slate-200 hover:border-blue-400 hover:bg-slate-50';
+    const textColor = theme === 'dark' ? 'text-gray-200' : 'text-slate-700';
+    const menuBg = theme === 'dark' ? 'bg-[#1e222d] border-[#2a2e39] shadow-xl shadow-black/40' : 'bg-white border-slate-200 shadow-xl shadow-slate-200/50';
+    const itemHover = theme === 'dark' ? 'hover:bg-blue-600 hover:text-white' : 'hover:bg-blue-50 hover:text-blue-600';
+    const itemText = theme === 'dark' ? 'text-gray-300' : 'text-slate-600';
+
+    return (
+        <div className="relative">
+            <button 
+                onClick={(e) => { e.stopPropagation(); onToggle(); }}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all duration-200 group ${width} ${buttonBg}`}
+            >
+                <div className="flex items-center gap-2 overflow-hidden">
+                    {icon && <span className={`text-slate-400 group-hover:text-blue-500 transition-colors`}>{icon}</span>}
+                    <span className={`text-xs font-bold truncate ${textColor}`}>{value}</span>
+                </div>
+                <ChevronDown size={14} className={`text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180 text-blue-500' : ''}`} />
+            </button>
+
+            {isOpen && (
+                <div className={`absolute top-[calc(100%+6px)] ${alignRight ? 'right-0' : 'left-0'} z-50 flex flex-col py-1 rounded-xl border min-w-[140px] animate-in fade-in zoom-in-95 duration-100 origin-top ${menuBg}`}>
+                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                        {options.map((opt) => {
+                            const isSelected = opt.value === value;
+                            return (
+                                <div 
+                                    key={opt.value}
+                                    onClick={() => onSelect(opt.value)}
+                                    className={`px-4 py-2.5 flex items-center justify-between cursor-pointer transition-colors text-xs font-medium ${itemText} ${isSelected ? (theme==='dark' ? 'bg-blue-600/10 text-blue-400' : 'bg-blue-50 text-blue-600') : itemHover}`}
+                                >
+                                    <span>{opt.label}</span>
+                                    {isSelected && <Check size={14} className="text-blue-500" />}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+
 const App: React.FC = () => {
   // CORE DATA STATE
   const [chartData, setChartData] = useState<OHLC[]>([]); 
@@ -62,6 +120,9 @@ const App: React.FC = () => {
   const [loadingMessage, setLoadingMessage] = useState('Initializing...');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLiveSyncing, setIsLiveSyncing] = useState(false); 
+  
+  // DROPDOWN STATE
+  const [openDropdown, setOpenDropdown] = useState<'NONE' | 'TIMEFRAME' | 'CHART_TYPE'>('NONE');
 
   // SETTINGS
   const [speed, setSpeed] = useState(1);
@@ -632,10 +693,31 @@ const App: React.FC = () => {
 
   const equityColor = equity > balance ? 'text-emerald-500' : equity < balance ? 'text-rose-500' : 'text-[var(--text-primary)]';
 
+  // --- DROPDOWN HELPERS ---
+  const handleDropdownToggle = (menu: 'TIMEFRAME' | 'CHART_TYPE') => {
+      setOpenDropdown(prev => prev === menu ? 'NONE' : menu);
+  };
+
+  const handleDropdownSelect = (menu: 'TIMEFRAME' | 'CHART_TYPE', val: string) => {
+      if (menu === 'TIMEFRAME') {
+          const newTf = val as Timeframe;
+          setTimeframe(newTf);
+          loadInitialData(activeAsset, newTf, sessionStartDate, sessionEndDate);
+      } else {
+          setChartType(val as ChartType);
+      }
+      setOpenDropdown('NONE');
+  };
+
   return (
     <div className="flex h-screen bg-[var(--background)] text-[var(--text-primary)] font-sans overflow-hidden">
       <GlobalStatusBar status={globalDownloadStatus} />
       
+      {/* GLOBAL OVERLAY FOR DROPDOWNS (Click Outside) */}
+      {openDropdown !== 'NONE' && (
+          <div className="fixed inset-0 z-[45]" onClick={() => setOpenDropdown('NONE')} />
+      )}
+
       {isAssetModalOpen && !isLoading && (
         <AssetModal activeSymbol={activeAsset} onClose={() => setIsAssetModalOpen(false)} onStartSession={handleStartSession} onRequireApiKey={() => setIsApiKeyModalOpen(true)} onDataDeleted={handleAssetDataDeleted} onDownloadProgress={setGlobalDownloadStatus} onDataChange={handleDataChange} theme={theme} />
       )}
@@ -680,35 +762,61 @@ const App: React.FC = () => {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 relative">
-          <header className="h-12 border-b border-[var(--border)] bg-[var(--background)] flex items-center px-4 gap-4 z-50 shadow-sm transition-colors duration-200">
+          <header className="h-14 border-b border-[var(--border)] bg-[var(--background)] flex items-center px-4 gap-4 z-50 shadow-sm transition-colors duration-200">
+             
+             {/* ASSET SELECTOR (Trigger for Modal) */}
              <div className="flex items-center gap-2 pr-4 border-r border-[var(--border)] cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsAssetModalOpen(true)}>
-                <Zap size={18} className="text-blue-500 fill-blue-500" />
-                <span className="font-black text-sm italic text-[var(--text-primary)]">{activeAsset}</span>
+                <div className="p-2 bg-blue-600/10 rounded-lg">
+                    <Zap size={18} className="text-blue-500 fill-blue-500" />
+                </div>
+                <div className="flex flex-col">
+                    <span className="font-black text-sm text-[var(--text-primary)] leading-tight">{activeAsset}</span>
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Active Pair</span>
+                </div>
              </div>
-             <div className="flex items-center gap-1 border-r border-[var(--border)] pr-4">
+
+             {/* TIMEFRAME DROPDOWN */}
+             <div className="flex items-center gap-2 border-r border-[var(--border)] pr-4">
                 {availableTimeframes.length > 0 ? (
-                     <select value={timeframe} onChange={(e) => { 
-                         const newTf = e.target.value as Timeframe; 
-                         setTimeframe(newTf); 
-                         loadInitialData(activeAsset, newTf, sessionStartDate, sessionEndDate); 
-                     }} className="bg-transparent text-[10px] font-black uppercase text-[var(--text-primary)] outline-none cursor-pointer">
-                        {availableTimeframes.map(tf => <option key={tf} value={tf} className="text-black">{tf}</option>)}
-                     </select>
+                    <HeaderDropdown 
+                        value={timeframe}
+                        options={availableTimeframes.map(tf => ({ value: tf, label: tf }))}
+                        isOpen={openDropdown === 'TIMEFRAME'}
+                        onToggle={() => handleDropdownToggle('TIMEFRAME')}
+                        onSelect={(val) => handleDropdownSelect('TIMEFRAME', val)}
+                        theme={theme}
+                        icon={<Layout size={14} />}
+                        width="w-24"
+                    />
                  ) : <span className="text-[10px] font-black uppercase text-[var(--text-secondary)]">No Data</span>}
              </div>
+
+             {/* CHART TYPE DROPDOWN */}
              <div className="flex items-center gap-2">
-                <BarChart3 size={16} className="text-[var(--text-secondary)]"/>
-                <select value={chartType} onChange={(e) => setChartType(e.target.value as any)} className="bg-transparent text-[10px] font-black uppercase text-[var(--text-secondary)] outline-none cursor-pointer">
-                    <option value="Candlestick" className="text-black">Candles</option>
-                    <option value="Line" className="text-black">Line</option>
-                </select>
+                <HeaderDropdown 
+                    value={chartType}
+                    options={[
+                        { value: 'Candlestick', label: 'Candles' },
+                        { value: 'Line', label: 'Line' },
+                        { value: 'Bar', label: 'Bars' }
+                    ]}
+                    isOpen={openDropdown === 'CHART_TYPE'}
+                    onToggle={() => handleDropdownToggle('CHART_TYPE')}
+                    onSelect={(val) => handleDropdownSelect('CHART_TYPE', val)}
+                    theme={theme}
+                    icon={<BarChart3 size={14} />}
+                    width="w-32"
+                />
              </div>
+
              <div className="h-6 w-px bg-[var(--border)] mx-2" />
+             
+             {/* TOOLS */}
              <div className="flex items-center gap-2">
-                 <button onClick={() => setIsChartSettingsOpen(!isChartSettingsOpen)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${isChartSettingsOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)]'}`}>
+                 <button onClick={() => setIsChartSettingsOpen(!isChartSettingsOpen)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${isChartSettingsOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] border border-transparent hover:border-[var(--border)]'}`}>
                      <Eye size={14} className={isChartSettingsOpen ? 'text-white' : 'text-[var(--text-secondary)]'} /> Display
                  </button>
-                 <button onClick={() => setShowDrawingToolbar(!showDrawingToolbar)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${showDrawingToolbar ? 'bg-blue-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)]'}`}>
+                 <button onClick={() => setShowDrawingToolbar(!showDrawingToolbar)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${showDrawingToolbar ? 'bg-blue-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] border border-transparent hover:border-[var(--border)]'}`}>
                      <PenTool size={14} className={showDrawingToolbar ? 'text-white' : 'text-[var(--text-secondary)]'} /> Tools
                  </button>
                  {isLiveSyncing && (
@@ -718,16 +826,19 @@ const App: React.FC = () => {
                      </div>
                  )}
              </div>
+
              <div className="ml-auto flex items-center gap-6">
                  <div className="flex flex-col items-end">
-                     <span className="text-[8px] text-[var(--text-secondary)] font-black uppercase">Balance</span>
+                     <span className="text-[8px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Balance</span>
                      <span className="text-sm font-mono font-black text-[var(--text-primary)]">${balance.toLocaleString()}</span>
                  </div>
                  <div className="flex flex-col items-end">
-                     <span className="text-[8px] text-[var(--text-secondary)] font-black uppercase">Equity</span>
+                     <span className="text-[8px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Equity</span>
                      <span className={`text-sm font-mono font-black ${equityColor}`}>${equity.toLocaleString()}</span>
                  </div>
-                 <Settings size={18} className="text-[var(--text-secondary)] cursor-pointer hover:text-blue-500" onClick={() => setIsSettingsOpen(true)} />
+                 <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-[var(--surface-secondary)] rounded-lg transition-colors group">
+                    <Settings size={18} className="text-[var(--text-secondary)] group-hover:text-blue-500 transition-colors" />
+                 </button>
              </div>
           </header>
 
