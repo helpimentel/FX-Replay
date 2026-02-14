@@ -110,16 +110,33 @@ const Chart: React.FC<ChartProps> = ({
       layout: {
         background: { type: ColorType.Solid, color: chartTheme.background },
         textColor: chartTheme.textColor,
+        fontSize: 11,
       },
       grid: {
         vertLines: { color: chartTheme.gridColor },
         horzLines: { color: chartTheme.gridColor },
+      },
+      localization: {
+          // Custom price formatter to ensure maximum precision defined by the asset
+          priceFormatter: (price: number) => price.toFixed(asset.pipDecimal),
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+      },
+      leftPriceScale: {
+          visible: false,
+      },
+      rightPriceScale: {
+          visible: true,
+          borderVisible: true,
+          // Optimization: narrower margins and slightly wider axis to show more granular levels
+          scaleMargins: {
+              top: 0.08,
+              bottom: 0.08,
+          },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -154,11 +171,10 @@ const Chart: React.FC<ChartProps> = ({
     };
   }, []); 
 
-  // 2. THEME & GRID UPDATES
+  // 2. THEME, GRID & LOCALIZATION UPDATES
   useEffect(() => {
     if (!chartRef.current) return;
     
-    // Apply Grid Settings immediately
     const gridColor = chartSettings.showGrid ? chartTheme.gridColor : 'transparent';
     
     chartRef.current.applyOptions({
@@ -170,10 +186,13 @@ const Chart: React.FC<ChartProps> = ({
         vertLines: { color: gridColor },
         horzLines: { color: gridColor },
       },
+      localization: {
+        priceFormatter: (price: number) => price.toFixed(asset.pipDecimal),
+      },
     });
-  }, [chartTheme, chartSettings.showGrid]);
+  }, [chartTheme, chartSettings.showGrid, asset.pipDecimal]);
 
-  // 3. SERIES CREATION
+  // 3. SERIES CREATION (WITH PRECISION)
   useEffect(() => {
     if (!chartRef.current) return;
     
@@ -184,20 +203,31 @@ const Chart: React.FC<ChartProps> = ({
       visualToolLinesRef.current = {};
     }
 
+    const seriesOptions = {
+        priceFormat: {
+            type: 'price' as const,
+            precision: asset.pipDecimal,
+            minMove: asset.tickSize,
+        },
+    };
+
     let series: ISeriesApi<any>;
     if (chartType === 'Line') {
       series = chartRef.current.addLineSeries({ 
+          ...seriesOptions,
           color: '#2962ff', 
           lineWidth: 2,
           crosshairMarkerVisible: true
       });
     } else if (chartType === 'Bar') {
       series = chartRef.current.addBarSeries({
+         ...seriesOptions,
          upColor: chartTheme.candleUp, 
          downColor: chartTheme.candleDown,
       });
     } else {
       series = chartRef.current.addCandlestickSeries({
+        ...seriesOptions,
         upColor: chartTheme.candleUp,
         downColor: chartTheme.candleDown,
         borderUpColor: chartTheme.candleUp,
@@ -215,7 +245,7 @@ const Chart: React.FC<ChartProps> = ({
         series.setData(visibleData);
     }
     
-  }, [chartType]); // Dependencies for series re-creation
+  }, [chartType, asset.pipDecimal, asset.tickSize]); // Trigger on asset changes too
 
   // 4. SERIES THEME UPDATES
   useEffect(() => {
@@ -235,9 +265,8 @@ const Chart: React.FC<ChartProps> = ({
            downColor: chartTheme.candleDown,
         });
     } else if (chartType === 'Line') {
-        // Line chart specific theme updates if needed
         mainSeriesRef.current.applyOptions({
-            color: '#2962ff', // Could be themed if desired
+            color: '#2962ff', 
         });
     }
   }, [chartTheme, chartType]);
