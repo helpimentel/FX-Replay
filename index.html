@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX Replay Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* Theme Variables Isolation */
+        :root.light {
+            --background: #ffffff; /* Pure White */
+            --surface: #ffffff;
+            --surface-secondary: #f1f5f9; /* Slate 100 */
+            --text-primary: #0f172a; /* Slate 900 */
+            --text-secondary: #475569; /* Slate 600 */
+            --border: #e2e8f0; /* Slate 200 */
+            --scrollbar-thumb: #cbd5e1;
+            --input-bg: #f8fafc;
+        }
+
+        :root.dark {
+            --background: #131722; /* TradingView Navy */
+            --surface: #1e222d;     /* Lighter Navy */
+            --surface-secondary: #2a2e39;
+            --text-primary: #d1d4dc;
+            --text-secondary: #787b86;
+            --border: #2a2e39;
+            --scrollbar-thumb: #363a45;
+            --input-bg: #1e222d;
+        }
+
+        html, body {
+            background-color: var(--background);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Scrollbar adaptive colors */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { opacity: 0.8; }
+
+        .tv-select { 
+            background: transparent; 
+            border: none; 
+            color: var(--text-primary); 
+            font-size: 13px; 
+            font-weight: 600; 
+            outline: none; 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            transition: background 0.2s; 
+            cursor: pointer; 
+        }
+        .tv-select:hover { background: var(--surface-secondary); }
+
+        .tv-button { 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            height: 32px; 
+            width: 32px; 
+            color: var(--text-secondary); 
+            border-radius: 4px; 
+            transition: all 0.2s; 
+        }
+        .tv-button:hover { background: var(--surface-secondary); color: #2962ff; }
+        .tv-button.active { color: #2962ff; background: rgba(41, 98, 255, 0.08); }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "lightweight-charts": "https://esm.sh/lightweight-charts@^4.2.1",
+    "d3": "https://esm.sh/d3@^7.9.0"
+  }
+}
+</script>
+</head>
+<body class="overflow-hidden">
+    <div id="root"></div>
+</body>
+</html>
