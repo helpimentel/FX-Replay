@@ -504,7 +504,7 @@ const App: React.FC = () => {
 
           setCurrentReplayTime(resumeTime);
           setIsReplayMode(true);
-          setActiveMainRightPanel('trade');
+          // Removed auto-switch to 'trade' to keep Session Panel active
       }
   };
 
@@ -775,7 +775,7 @@ const App: React.FC = () => {
                 </div>
              </div>
 
-             {/* TIMEFRAME DROPDOWN */}
+             {/* TIMEFRAME & CHART TYPE GROUP */}
              <div className="flex items-center gap-2 border-r border-[var(--border)] pr-4">
                 {availableTimeframes.length > 0 ? (
                     <HeaderDropdown 
@@ -789,11 +789,9 @@ const App: React.FC = () => {
                         width="w-24"
                     />
                  ) : <span className="text-[10px] font-black uppercase text-[var(--text-secondary)]">No Data</span>}
-             </div>
 
-             {/* CHART TYPE DROPDOWN */}
-             <div className="flex items-center gap-2">
-                <HeaderDropdown 
+                 {/* CHART TYPE DROPDOWN (Now here) */}
+                 <HeaderDropdown 
                     value={chartType}
                     options={[
                         { value: 'Candlestick', label: 'Candles' },
@@ -808,8 +806,6 @@ const App: React.FC = () => {
                     width="w-32"
                 />
              </div>
-
-             <div className="h-6 w-px bg-[var(--border)] mx-2" />
              
              {/* TOOLS */}
              <div className="flex items-center gap-2">
