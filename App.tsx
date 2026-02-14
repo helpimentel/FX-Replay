@@ -116,6 +116,7 @@ const App: React.FC = () => {
   // UI FLAGS
   const [isReplayMode, setIsReplayMode] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isAutoPaused, setIsAutoPaused] = useState(false); 
   const [isLoading, setIsLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Initializing...');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -261,12 +262,13 @@ const App: React.FC = () => {
     setIsLoading(true);
     setLoadingMessage('Initializing data service...');
     await initializeDataService();
-    const [savedTheme, savedScripts, savedInds, savedBal, savedSettings] = await Promise.all([
+    const [savedTheme, savedScripts, savedInds, savedBal, savedSettings, savedChartType] = await Promise.all([
       getSetting('fx_pro_theme'), 
       getSetting('fx_pro_v13_scripts'), 
       getSetting('fx_pro_v13_indicators'), 
       getSetting('fx_pro_balance'), 
-      getSetting('fx_pro_chart_settings')
+      getSetting('fx_pro_chart_settings'),
+      getSetting('fx_pro_chart_type')
     ]);
     
     if(savedTheme) {
@@ -286,11 +288,14 @@ const App: React.FC = () => {
     if(savedInds) setIndicators(savedInds as IndicatorConfig[]);
     if(savedBal) { setInitialBalance(Number(savedBal)); setBalance(Number(savedBal)); }
     if(savedSettings) setChartSettings(savedSettings as ChartSettings);
-    setChartType(prev => (prev !== 'Line' && prev !== 'Candlestick') ? 'Candlestick' : prev);
     
-    // Strict API Control: We do NOT fetch remote assets on boot.
-    // We only rely on what's available locally or defaults.
-    // User must explicitly fetch/sync in AssetModal or Settings to get new lists.
+    // HEIKIN ASHI FALLBACK LOGIC
+    if (savedChartType === 'HeikinAshi') {
+        setChartType('Candlestick');
+        setSetting('fx_pro_chart_type', 'Candlestick');
+    } else if (savedChartType) {
+        setChartType(savedChartType as ChartType);
+    }
     
     await refreshAvailableTimeframes(activeAsset);
     setIsLoading(false);
@@ -299,9 +304,6 @@ const App: React.FC = () => {
   useEffect(() => {
     bootApp();
   }, [bootApp]);
-
-  // STRICT API CONTROL: Removed automatic polling useEffect.
-  // The system now relies entirely on downloaded data or explicit user updates.
 
   const refreshAvailableTimeframes = async (symbol: string) => {
       const available: Timeframe[] = [];
@@ -338,15 +340,12 @@ const App: React.FC = () => {
   }, [positions, initialBalance, currentSessionId, activeAsset, timeframe, sessionStartDate, sessionEndDate]);
 
   const loadInitialData = async (sym: string, tf: Timeframe, start: string, end: string) => {
-      // NOTE: We do NOT setChartData([]) here. Keeping the old data visible while new data loads
-      // prevents the chart from unmounting, which ensures lines/drawings persist visually.
-      
+      // NOTE: We clear chart data before loading new timeframe to ensure exclusive rendering
+      setChartData([]); 
       setIsLoading(true);
       setLoadingMessage(`Loading ${sym} (${tf})...`);
       
       const key = `${sym}-${tf}`;
-      console.log(`[App] Accessing Data Key: ${key}`);
-
       const stats = await getTfStats(sym, tf);
       if (stats.count < 2) {
           setIsLoading(false);
@@ -369,7 +368,6 @@ const App: React.FC = () => {
       const data = await getCandlesInRange(sym, tf, contextStart, endTs);
       
       dataCacheRef.current.set(key, data);
-      console.log(`[App] Cached ${data.length} candles for ${key}`);
 
       if (data.length < 2) {
           setIsLoading(false);
@@ -377,7 +375,7 @@ const App: React.FC = () => {
           return null;
       }
       
-      setChartData(dataCacheRef.current.get(key) || []);
+      setChartData(data);
       setIsLoading(false);
       return data;
   };
@@ -390,11 +388,9 @@ const App: React.FC = () => {
           setChartData(prev => {
               const lastNew = olderData[olderData.length-1].time;
               if (lastNew >= prev[0].time) return prev; 
-              
               const key = `${activeAsset}-${timeframe}`;
               const merged = [...olderData, ...prev];
               dataCacheRef.current.set(key, merged);
-              
               return merged;
           });
       }
@@ -405,8 +401,10 @@ const App: React.FC = () => {
       setCurrentSessionId(newSessionId);
       setPositions([]); setVisualTool(null); setInitialBalance(100000); setBalance(100000); setTriggeredEvents([]); setDrawings([]);
       setHiddenTradeIds(new Set()); 
+      setIsAutoPaused(false);
       
-      setChartData([]); // Clear for new session
+      // Clear data to ensure previous rendering is removed
+      setChartData([]); 
       
       const data = await loadInitialData(config.symbol, config.timeframe, config.startDate, config.endDate);
       if (data && data.length >= 2) {
@@ -427,10 +425,7 @@ const App: React.FC = () => {
           setSessionEndTime(endTs);
 
           let safeStart = startTs - 1; 
-
-          if (safeStart < data[0].time) {
-              safeStart = data[0].time;
-          }
+          if (safeStart < data[0].time) safeStart = data[0].time;
 
           setCurrentReplayTime(safeStart);
           setIsReplayMode(true);
@@ -460,6 +455,7 @@ const App: React.FC = () => {
           setChartData([]);
           setIsReplayMode(false);
           setIsPlaying(false);
+          setIsAutoPaused(false);
           setHiddenTradeIds(new Set());
           setBalance(initialBalance); 
           setActiveMainRightPanel('sessions'); 
@@ -469,14 +465,14 @@ const App: React.FC = () => {
   const handleLoadSession = async (session: SavedSession) => {
       setCurrentSessionId(session.id);
       setIsPlaying(false);
+      setIsAutoPaused(false);
       setInitialBalance(session.initialBalance);
       setBalance(session.balance);
       setPositions(session.positions);
       setVisualTool(null);
       setHiddenTradeIds(new Set()); 
       
-      setChartData([]); // Clear before loading new session data
-      
+      setChartData([]); 
       const data = await loadInitialData(session.symbol, session.timeframe, session.startDate, session.endDate);
       
       if (data && data.length >= 2) {
@@ -484,28 +480,22 @@ const App: React.FC = () => {
           setTimeframe(session.timeframe);
           setSessionStartDate(session.startDate);
           setSessionEndDate(session.endDate);
-          
           const endTs = new Date(session.endDate);
           endTs.setUTCHours(23, 59, 59, 999);
           setSessionStartTime(endTs.getTime());
           setSessionEndTime(endTs.getTime());
-          
           const startObj = new Date(session.startDate);
           startObj.setUTCHours(0, 0, 0, 0);
           const startTs = startObj.getTime();
-
           let resumeTime = startTs - 1;
           const closed = session.positions.filter(p => p.status === 'CLOSED');
           if (closed.length > 0) {
               const lastExit = Math.max(...closed.map(p => p.exitTime || 0));
               if (lastExit > resumeTime) resumeTime = lastExit;
           }
-          
           if (resumeTime < data[0].time) resumeTime = data[0].time;
-
           setCurrentReplayTime(resumeTime);
           setIsReplayMode(true);
-          // Removed auto-switch to 'trade' to keep Session Panel active
       }
   };
 
@@ -604,6 +594,7 @@ const App: React.FC = () => {
         });
         if (hasChanges && chartSettings.autoPauseOnTrigger && (isPlaying || isReplayMode) && newTriggeredEvents.length > 0) {
             setIsPlaying(false);
+            setIsAutoPaused(true); 
             setTriggeredEvents(prev => [...prev, ...newTriggeredEvents]);
         }
         return hasChanges ? updatedPositions : prevPositions;
@@ -623,6 +614,14 @@ const App: React.FC = () => {
                if (nextTime >= sessionEndTime) { nextTime = sessionEndTime; setIsPlaying(false); }
                const lastDataTime = state.chartData[state.chartData.length - 1].time;
                if (nextTime >= lastDataTime) { nextTime = lastDataTime; setIsPlaying(false); }
+               const findIdx = (t: number) => {
+                   let l=0, h=state.chartData.length-1, i=-1;
+                   while(l<=h) {
+                       const m = Math.floor((l+h)/2);
+                       if(state.chartData[m].time <= t) { i=m; l=m+1; } else { h=m-1; }
+                   }
+                   return i;
+               };
                setCurrentReplayTime(nextTime);
           }
           lastTimestampRef.current = ts;
@@ -633,7 +632,13 @@ const App: React.FC = () => {
       return () => { if(animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current); };
   }, [isPlaying, isLoading, speed, timeframe, sessionEndTime, candleDuration]);
 
+  const handleTogglePlay = () => {
+      if (!isPlaying) setIsAutoPaused(false); 
+      setIsPlaying(!isPlaying);
+  };
+
   const handleStep = (dir: number) => {
+      setIsAutoPaused(false); 
       if (dir === 1) {
           const nextIndex = visibleIndex + 1;
           if (nextIndex < chartData.length) setCurrentReplayTime(chartData[nextIndex].time);
@@ -644,7 +649,7 @@ const App: React.FC = () => {
   };
 
   const handleAssetDataDeleted = useCallback((symbol: string) => {
-      setChartData([]); setIsReplayMode(false); setIsPlaying(false); setIsAssetModalOpen(true);
+      setChartData([]); setIsReplayMode(false); setIsPlaying(false); setIsAutoPaused(false); setIsAssetModalOpen(true);
       for (const key of dataCacheRef.current.keys()) {
           if (key.startsWith(symbol)) dataCacheRef.current.delete(key);
       }
@@ -662,7 +667,7 @@ const App: React.FC = () => {
               loadInitialData(activeAsset, timeframe, sessionStartDate, sessionEndDate);
           }
       }
-  }, [activeAsset, timeframe, isReplayMode, sessionStartDate, sessionEndDate]);
+  }, [activeAsset, timeframe, sessionStartDate, sessionEndDate]);
 
   const handleTradeExecution = useCallback((type: 'BUY' | 'SELL', orderType: 'MARKET' | 'LIMIT' | 'STOP', size: number, entry: number, sl?: number, tp?: number) => {
       const id = Math.random().toString(36).slice(2);
@@ -706,6 +711,7 @@ const App: React.FC = () => {
           loadInitialData(activeAsset, newTf, sessionStartDate, sessionEndDate);
       } else {
           setChartType(val as ChartType);
+          setSetting('fx_pro_chart_type', val);
       }
       setOpenDropdown('NONE');
   };
@@ -713,34 +719,14 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen bg-[var(--background)] text-[var(--text-primary)] font-sans overflow-hidden">
       <GlobalStatusBar status={globalDownloadStatus} />
-      
-      {/* GLOBAL OVERLAY FOR DROPDOWNS (Click Outside) */}
-      {openDropdown !== 'NONE' && (
-          <div className="fixed inset-0 z-[45]" onClick={() => setOpenDropdown('NONE')} />
-      )}
+      {openDropdown !== 'NONE' && ( <div className="fixed inset-0 z-[45]" onClick={() => setOpenDropdown('NONE')} /> )}
 
       {isAssetModalOpen && !isLoading && (
         <AssetModal activeSymbol={activeAsset} onClose={() => setIsAssetModalOpen(false)} onStartSession={handleStartSession} onRequireApiKey={() => setIsApiKeyModalOpen(true)} onDataDeleted={handleAssetDataDeleted} onDownloadProgress={setGlobalDownloadStatus} onDataChange={handleDataChange} theme={theme} />
       )}
-      
       {isSettingsOpen && (
-        <SettingsModal 
-            balance={initialBalance} 
-            onUpdateBalance={setInitialBalance} 
-            theme={theme} 
-            onUpdateTheme={(newTheme) => { 
-                setTheme(newTheme); 
-                if (newTheme === 'dark') setChartTheme(DEFAULT_CHART_THEME_NAVY); 
-                else setChartTheme(DEFAULT_CHART_THEME_LIGHT); 
-            }} 
-            onClose={() => setIsSettingsOpen(false)} 
-            onProvidersUpdated={() => {
-                // If providers changed, we might want to refresh available assets list, but strictly via user action later.
-                // We do NOT call fetchRemoteAssets here automatically.
-            }} 
-        />
+        <SettingsModal balance={initialBalance} onUpdateBalance={setInitialBalance} theme={theme} onUpdateTheme={(newTheme) => { setTheme(newTheme); if (newTheme === 'dark') setChartTheme(DEFAULT_CHART_THEME_NAVY); else setChartTheme(DEFAULT_CHART_THEME_LIGHT); }} onClose={() => setIsSettingsOpen(false)} onProvidersUpdated={() => {}} />
       )}
-      
       <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSuccess={() => setIsApiKeyModalOpen(false)} theme={theme} />
       
       {errorMessage && (
@@ -764,52 +750,16 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex flex-col min-w-0 relative">
           <header className="h-14 border-b border-[var(--border)] bg-[var(--background)] flex items-center px-4 gap-4 z-50 shadow-sm transition-colors duration-200">
-             
-             {/* ASSET SELECTOR (Trigger for Modal) */}
              <div className="flex items-center gap-2 pr-4 border-r border-[var(--border)] cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setIsAssetModalOpen(true)}>
-                <div className="p-2 bg-blue-600/10 rounded-lg">
-                    <Zap size={18} className="text-blue-500 fill-blue-500" />
-                </div>
-                <div className="flex flex-col">
-                    <span className="font-black text-sm text-[var(--text-primary)] leading-tight">{activeAsset}</span>
-                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Active Pair</span>
-                </div>
+                <div className="p-2 bg-blue-600/10 rounded-lg"><Zap size={18} className="text-blue-500 fill-blue-500" /></div>
+                <div className="flex flex-col"><span className="font-black text-sm text-[var(--text-primary)] leading-tight">{activeAsset}</span><span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Active Pair</span></div>
              </div>
-
-             {/* TIMEFRAME & CHART TYPE GROUP */}
              <div className="flex items-center gap-2 border-r border-[var(--border)] pr-4">
                 {availableTimeframes.length > 0 ? (
-                    <HeaderDropdown 
-                        value={timeframe}
-                        options={availableTimeframes.map(tf => ({ value: tf, label: tf }))}
-                        isOpen={openDropdown === 'TIMEFRAME'}
-                        onToggle={() => handleDropdownToggle('TIMEFRAME')}
-                        onSelect={(val) => handleDropdownSelect('TIMEFRAME', val)}
-                        theme={theme}
-                        icon={<Layout size={14} />}
-                        width="w-24"
-                    />
+                    <HeaderDropdown value={timeframe} options={availableTimeframes.map(tf => ({ value: tf, label: tf }))} isOpen={openDropdown === 'TIMEFRAME'} onToggle={() => handleDropdownToggle('TIMEFRAME')} onSelect={(val) => handleDropdownSelect('TIMEFRAME', val)} theme={theme} icon={<Layout size={14} />} width="w-24" />
                  ) : <span className="text-[10px] font-black uppercase text-[var(--text-secondary)]">No Data</span>}
-
-                 {/* CHART TYPE DROPDOWN (Now here) */}
-                 <HeaderDropdown 
-                    value={chartType}
-                    options={[
-                        { value: 'Candlestick', label: 'Candles' },
-                        { value: 'HeikinAshi', label: 'Heikin Ashi' },
-                        { value: 'Line', label: 'Line' },
-                        { value: 'Bar', label: 'Bars' }
-                    ]}
-                    isOpen={openDropdown === 'CHART_TYPE'}
-                    onToggle={() => handleDropdownToggle('CHART_TYPE')}
-                    onSelect={(val) => handleDropdownSelect('CHART_TYPE', val)}
-                    theme={theme}
-                    icon={<BarChart3 size={14} />}
-                    width="w-32"
-                />
+                 <HeaderDropdown value={chartType} options={[{ value: 'Candlestick', label: 'Candles' }, { value: 'Line', label: 'Line' }, { value: 'Bar', label: 'Bars' }]} isOpen={openDropdown === 'CHART_TYPE'} onToggle={() => handleDropdownToggle('CHART_TYPE')} onSelect={(val) => handleDropdownSelect('CHART_TYPE', val)} theme={theme} icon={<BarChart3 size={14} />} width="w-32" />
              </div>
-             
-             {/* TOOLS */}
              <div className="flex items-center gap-2">
                  <button onClick={() => setIsChartSettingsOpen(!isChartSettingsOpen)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${isChartSettingsOpen ? 'bg-blue-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] border border-transparent hover:border-[var(--border)]'}`}>
                      <Eye size={14} className={isChartSettingsOpen ? 'text-white' : 'text-[var(--text-secondary)]'} /> Display
@@ -817,26 +767,11 @@ const App: React.FC = () => {
                  <button onClick={() => setShowDrawingToolbar(!showDrawingToolbar)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${showDrawingToolbar ? 'bg-blue-600 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--surface-secondary)] border border-transparent hover:border-[var(--border)]'}`}>
                      <PenTool size={14} className={showDrawingToolbar ? 'text-white' : 'text-[var(--text-secondary)]'} /> Tools
                  </button>
-                 {isLiveSyncing && (
-                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-500 animate-pulse">
-                         <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                         <span className="text-[10px] font-black uppercase">Live</span>
-                     </div>
-                 )}
              </div>
-
              <div className="ml-auto flex items-center gap-6">
-                 <div className="flex flex-col items-end">
-                     <span className="text-[8px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Balance</span>
-                     <span className="text-sm font-mono font-black text-[var(--text-primary)]">${balance.toLocaleString()}</span>
-                 </div>
-                 <div className="flex flex-col items-end">
-                     <span className="text-[8px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Equity</span>
-                     <span className={`text-sm font-mono font-black ${equityColor}`}>${equity.toLocaleString()}</span>
-                 </div>
-                 <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-[var(--surface-secondary)] rounded-lg transition-colors group">
-                    <Settings size={18} className="text-[var(--text-secondary)] group-hover:text-blue-500 transition-colors" />
-                 </button>
+                 <div className="flex flex-col items-end"><span className="text-[8px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Balance</span><span className="text-sm font-mono font-black text-[var(--text-primary)]">${balance.toLocaleString()}</span></div>
+                 <div className="flex flex-col items-end"><span className="text-[8px] text-[var(--text-secondary)] font-black uppercase tracking-widest">Equity</span><span className={`text-sm font-mono font-black ${equityColor}`}>${equity.toLocaleString()}</span></div>
+                 <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-[var(--surface-secondary)] rounded-lg transition-colors group"><Settings size={18} className="text-[var(--text-secondary)] group-hover:text-blue-500 transition-colors" /></button>
              </div>
           </header>
 
@@ -844,90 +779,30 @@ const App: React.FC = () => {
               <DrawingToolbar activeTool={activeDrawingTool} onSelectTool={setActiveDrawingTool} theme={theme} onClearAll={() => setDrawings([])} isVisible={showDrawingToolbar} />
               <div className="flex-1 flex flex-col relative min-h-0">
                   <div className="flex-1 relative isolate w-full min-h-0 pb-2"> 
-                     {/* Always render Chart if we are in replay mode or have data, handling empty data gracefully inside Chart */}
                      {(chartData.length >= 0 || isLoading) && ( 
-                         <Chart 
-                            data={chartData} 
-                            chartType={chartType} 
-                            positions={positions} 
-                            indicators={indicators} 
-                            scripts={scripts} 
-                            replayIndex={visibleIndex} 
-                            visualTool={visualTool} 
-                            onUpdateVisualTool={setVisualTool} 
-                            onUpdatePosition={handleUpdatePosition} 
-                            chartSettings={chartSettings} 
-                            pipDecimal={asset.pipDecimal} 
-                            asset={asset} 
-                            theme={theme} 
-                            chartTheme={chartTheme} 
-                            currentPrice={currentPrice} 
-                            triggeredEvents={triggeredEvents} 
-                            drawings={drawings} 
-                            activeDrawingTool={activeDrawingTool} 
-                            onUpdateDrawings={setDrawings} 
-                            onDrawingComplete={() => setActiveDrawingTool('CURSOR')} 
-                            onLoadMoreHistory={handleLoadMoreData} 
-                            highlightedPositionId={highlightedPositionId} 
-                            timeframe={timeframe} 
-                            hiddenTradeIds={hiddenTradeIds} 
-                         />
+                         <Chart data={chartData} chartType={chartType} positions={positions} indicators={indicators} scripts={scripts} replayIndex={visibleIndex} visualTool={visualTool} onUpdateVisualTool={setVisualTool} onUpdatePosition={handleUpdatePosition} chartSettings={chartSettings} pipDecimal={asset.pipDecimal} asset={asset} theme={theme} chartTheme={chartTheme} currentPrice={currentPrice} triggeredEvents={triggeredEvents} drawings={drawings} activeDrawingTool={activeDrawingTool} onUpdateDrawings={setDrawings} onDrawingComplete={() => setActiveDrawingTool('CURSOR')} onLoadMoreHistory={handleLoadMoreData} highlightedPositionId={highlightedPositionId} timeframe={timeframe} hiddenTradeIds={hiddenTradeIds} isAutoPaused={isAutoPaused} />
                      )}
                   </div>
-                  {isReplayMode && <Controls isPlaying={isPlaying} onTogglePlay={() => setIsPlaying(!isPlaying)} onStep={handleStep} speed={speed} onSpeedChange={setSpeed} currentCandle={chartData[visibleIndex]} sessionEndTime={sessionEndTime} theme={theme} />}
+                  {isReplayMode && <Controls isPlaying={isPlaying} onTogglePlay={handleTogglePlay} onStep={handleStep} speed={speed} onSpeedChange={setSpeed} currentCandle={chartData[visibleIndex]} sessionEndTime={sessionEndTime} theme={theme} />}
               </div>
           </main>
       </div>
       
       <div ref={sidebarRef} className="flex flex-col border-l border-[var(--border)] h-full flex-shrink-0 relative bg-[var(--background)] shadow-2xl z-40 transition-colors duration-200" style={{ width: sidebarWidth }}>
           <div className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-50 hover:bg-blue-500/50 transition-colors" onMouseDown={startResizing} />
-          {/* Menu principal header - ajustado para usar bg-[var(--background)] garantindo tom Navy no modo escuro */}
           <div className="flex-shrink-0 flex items-center gap-1 px-3 py-2 border-b border-[var(--border)] bg-[var(--background)]" style={{ height: '48px' }}>
-              <button onClick={() => setActiveMainRightPanel('trade')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeMainRightPanel === 'trade' ? 'bg-blue-600 text-white shadow-md' : 'text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-blue-500'}`}>
-                  <Wallet size={14} /> Trades
-              </button>
-              <button onClick={() => setActiveMainRightPanel('analysis')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeMainRightPanel === 'analysis' ? 'bg-blue-600 text-white shadow-md' : 'text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-blue-500'}`}>
-                  <FileText size={14} /> Analysis
-              </button>
-              <button onClick={() => setActiveMainRightPanel('sessions')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeMainRightPanel === 'sessions' ? 'bg-blue-600 text-white shadow-md' : 'text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-blue-500'}`}>
-                  <History size={14} /> Sessions
-              </button>
+              <button onClick={() => setActiveMainRightPanel('trade')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeMainRightPanel === 'trade' ? 'bg-blue-600 text-white shadow-md' : 'text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-blue-500'}`}><Wallet size={14} /> Trades</button>
+              <button onClick={() => setActiveMainRightPanel('analysis')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeMainRightPanel === 'analysis' ? 'bg-blue-600 text-white shadow-md' : 'text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-blue-500'}`}><FileText size={14} /> Analysis</button>
+              <button onClick={() => setActiveMainRightPanel('sessions')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${activeMainRightPanel === 'sessions' ? 'bg-blue-600 text-white shadow-md' : 'text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-blue-500'}`}><History size={14} /> Sessions</button>
           </div>
           <div className="flex-1 overflow-hidden relative flex flex-col">
               {activeMainRightPanel === 'trade' && <TradePanel currentPrice={currentPrice} balance={balance} positions={positions} theme={theme} asset={asset} visualTool={visualTool} onTrade={handleTradeExecution} onClosePosition={handleClosePosition} onDeletePosition={handleDeletePosition} onPartialClose={handlePartialClose} onActivateVisualTool={handleActivateVisualTool} onCancelVisualTool={() => setVisualTool(null)} onUpdateVisualTool={setVisualTool} onUpdatePosition={handleUpdatePosition} />}
-              {activeMainRightPanel === 'analysis' && (
-                  <EntryAnalysisPanel 
-                    positions={positions} 
-                    chartData={chartData} 
-                    currentReplayTime={currentReplayTime} 
-                    asset={asset} 
-                    theme={theme} 
-                    onHighlightPosition={setHighlightedPositionId} 
-                    hiddenTradeIds={hiddenTradeIds}
-                    onToggleVisibility={handleToggleTradeVisibility}
-                    onToggleAllVisibility={handleToggleAllVisibility}
-                    highlightedPositionId={highlightedPositionId} 
-                  />
-              )}
-              {activeMainRightPanel === 'sessions' && (
-                  <SessionsPanel 
-                    theme={theme} 
-                    onLoadSession={handleLoadSession} 
-                    currentSessionId={currentSessionId}
-                    hiddenTradeIds={hiddenTradeIds}
-                    onToggleVisibility={handleToggleTradeVisibility}
-                    onDeleteSession={handleDeleteActiveSession}
-                    onHighlightPosition={setHighlightedPositionId}
-                  />
-              )}
+              {activeMainRightPanel === 'analysis' && <EntryAnalysisPanel positions={positions} chartData={chartData} currentReplayTime={currentReplayTime} asset={asset} theme={theme} onHighlightPosition={setHighlightedPositionId} hiddenTradeIds={hiddenTradeIds} onToggleVisibility={handleToggleTradeVisibility} onToggleAllVisibility={handleToggleAllVisibility} highlightedPositionId={highlightedPositionId} />}
+              {activeMainRightPanel === 'sessions' && <SessionsPanel theme={theme} onLoadSession={handleLoadSession} currentSessionId={currentSessionId} hiddenTradeIds={hiddenTradeIds} onToggleVisibility={handleToggleTradeVisibility} onDeleteSession={handleDeleteActiveSession} onHighlightPosition={setHighlightedPositionId} />}
           </div>
       </div>
-
       {isChartSettingsOpen && <ChartSettingsPanel settings={chartSettings} onUpdate={setChartSettings} theme={theme} chartTheme={chartTheme} onUpdateChartTheme={setChartTheme} onClose={() => setIsChartSettingsOpen(false)} />}
-      
-      {partialCloseTarget && (
-        <PartialCloseModal data={partialCloseTarget} currentPrice={currentPrice} balance={balance} asset={asset} theme={theme} onClose={() => setPartialCloseTarget(null)} onConfirm={(id, sz, price) => { setPositions(prev => { const p = prev.find(x => x.id === id); if(!p) return prev; const rem = p.size - sz; const pnl = (p.type==='BUY'?price-p.entryPrice:p.entryPrice-price)*sz*asset.contractSize; const closedPortion = { ...p, id: Math.random().toString(), size: sz, initialSize: sz, status: 'CLOSED' as const, exitPrice: price, exitTime: currentReplayTime, closedPnl: pnl, parentId: p.id, exitReason: 'PARTIAL' as const }; if(rem < 0.01) return prev.map(x => x.id===id ? {...x, status:'CLOSED', exitPrice:price, exitTime:currentReplayTime, closedPnl:pnl, exitReason: 'MANUAL'} : x); return [...prev.map(x => x.id===id ? {...x, size: rem} : x), closedPortion]; }); }} />
-      )}
+      {partialCloseTarget && ( <PartialCloseModal data={partialCloseTarget} currentPrice={currentPrice} balance={balance} asset={asset} theme={theme} onClose={() => setPartialCloseTarget(null)} onConfirm={(id, sz, price) => { setPositions(prev => { const p = prev.find(x => x.id === id); if(!p) return prev; const rem = p.size - sz; const pnl = (p.type==='BUY'?price-p.entryPrice:p.entryPrice-price)*sz*asset.contractSize; const closedPortion = { ...p, id: Math.random().toString(), size: sz, initialSize: sz, status: 'CLOSED' as const, exitPrice: price, exitTime: currentReplayTime, closedPnl: pnl, parentId: p.id, exitReason: 'PARTIAL' as const }; if(rem < 0.01) return prev.map(x => x.id===id ? {...x, status:'CLOSED', exitPrice:price, exitTime:currentReplayTime, closedPnl:pnl, exitReason: 'MANUAL'} : x); return [...prev.map(x => x.id===id ? {...x, size: rem} : x), closedPortion]; }); }} /> )}
     </div>
   );
 };

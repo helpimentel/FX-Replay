@@ -14,7 +14,7 @@ export interface CandleDBEntry extends OHLC {
 }
 
 export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1D' | '1W' | '1M' | '12M';
-export type ChartType = 'Candlestick' | 'HeikinAshi' | 'Line' | 'Bar' | 'Renko';
+export type ChartType = 'Candlestick' | 'Line' | 'Bar';
 export type OrderType = 'MARKET' | 'LIMIT' | 'STOP';
 export type AssetCategory = 'Forex' | 'Crypto' | 'Indices' | 'Commodities' | 'Stocks';
 export type Theme = 'dark' | 'light';
