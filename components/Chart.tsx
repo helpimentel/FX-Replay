@@ -28,7 +28,7 @@ interface ChartProps {
   onLoadMoreHistory: () => void;
   highlightedPositionId: string | null;
   timeframe: Timeframe;
-  hiddenTradeIds?: Set<string>; // NEW PROP
+  hiddenTradeIds?: Set<string>; 
 }
 
 const Chart: React.FC<ChartProps> = ({
@@ -58,22 +58,15 @@ const Chart: React.FC<ChartProps> = ({
   hiddenTradeIds = new Set()
 }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null); // Ref for dynamic tooltip
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<ISeriesApi<"Candlestick" | "Bar" | "Line"> | null>(null);
   
-  // NEW: Connector Series for Highlighted Trade
   const connectorSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-
-  // Indicators
   const indicatorSeriesRef = useRef<Map<string, ISeriesApi<"Line" | "Histogram">>>(new Map());
-  
-  // Position Lines
   const activePositionLinesRef = useRef<Map<string, { entry?: IPriceLine, sl?: IPriceLine, tp?: IPriceLine, exit?: IPriceLine }>>(new Map());
-  
-  // Visual Tool Refs
   const visualToolLinesRef = useRef<{ entry?: IPriceLine, sl?: IPriceLine, tp?: IPriceLine }>({});
   
-  // Dragging State
   const draggingState = useRef<{ 
       active: boolean; 
       type: 'POSITION' | 'VISUAL'; 
@@ -82,10 +75,8 @@ const Chart: React.FC<ChartProps> = ({
       startPrice: number;
   } | null>(null);
   
-  // History Loading
   const isLoadingHistoryRef = useRef(false);
 
-  // Helper to format data based on chart type
   const getChartData = useCallback((ohlcData: OHLC[]) => {
       if (chartType === 'Line') {
           return ohlcData.map(d => ({
@@ -117,8 +108,15 @@ const Chart: React.FC<ChartProps> = ({
         horzLines: { color: chartTheme.gridColor },
       },
       localization: {
-          // Custom price formatter to ensure maximum precision defined by the asset
           priceFormatter: (price: number) => price.toFixed(asset.pipDecimal),
+          // NEW: Include day of week in the time axis label
+          timeFormatter: (time: number) => {
+              const date = new Date(time * 1000);
+              const day = date.toLocaleDateString('en-US', { weekday: 'short' });
+              const dateStr = date.toISOString().split('T')[0];
+              const timeStr = date.getUTCHours().toString().padStart(2, '0') + ':' + date.getUTCMinutes().toString().padStart(2, '0');
+              return `${day}, ${dateStr} ${timeStr}`;
+          }
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
@@ -132,7 +130,6 @@ const Chart: React.FC<ChartProps> = ({
       rightPriceScale: {
           visible: true,
           borderVisible: true,
-          // Optimization: narrower margins and slightly wider axis to show more granular levels
           scaleMargins: {
               top: 0.08,
               bottom: 0.08,
@@ -153,6 +150,66 @@ const Chart: React.FC<ChartProps> = ({
     });
     
     chartRef.current = chart;
+
+    // --- TOOLTIP LOGIC ---
+    chart.subscribeCrosshairMove((param) => {
+        if (!tooltipRef.current || !chartContainerRef.current) return;
+
+        if (
+            param.point === undefined ||
+            !param.time ||
+            param.point.x < 0 ||
+            param.point.x > chartContainerRef.current.clientWidth ||
+            param.point.y < 0 ||
+            param.point.y > chartContainerRef.current.clientHeight
+        ) {
+            tooltipRef.current.style.display = 'none';
+        } else {
+            const data = param.seriesData.get(mainSeriesRef.current!);
+            if (data) {
+                tooltipRef.current.style.display = 'block';
+                const date = new Date((param.time as number) * 1000);
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+                const dateStr = date.toISOString().split('T')[0];
+                const timeStr = date.getUTCHours().toString().padStart(2, '0') + ':' + date.getUTCMinutes().toString().padStart(2, '0');
+                
+                // Get prices
+                const price = (data as any);
+                const o = price.open !== undefined ? price.open.toFixed(asset.pipDecimal) : '-';
+                const h = price.high !== undefined ? price.high.toFixed(asset.pipDecimal) : '-';
+                const l = price.low !== undefined ? price.low.toFixed(asset.pipDecimal) : '-';
+                const c = (price.close !== undefined ? price.close : (price.value !== undefined ? price.value : 0)).toFixed(asset.pipDecimal);
+
+                tooltipRef.current.innerHTML = `
+                    <div style="font-size: 10px; font-weight: 800; color: #3b82f6; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.05em;">${dayName}</div>
+                    <div style="font-size: 11px; font-weight: 700; margin-bottom: 8px; border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 4px;">${dateStr} <span style="opacity: 0.6; margin-left: 4px;">${timeStr}</span></div>
+                    <div style="display: grid; grid-template-cols: 1fr 1fr; gap: 4px 12px; font-family: 'JetBrains Mono', monospace; font-size: 10px;">
+                        <div style="color: #787b86">O: <span style="color: inherit">${o}</span></div>
+                        <div style="color: #089981">H: <span style="color: inherit">${h}</span></div>
+                        <div style="color: #f23645">L: <span style="color: inherit">${l}</span></div>
+                        <div style="color: #787b86">C: <span style="color: inherit">${c}</span></div>
+                    </div>
+                `;
+
+                const toolWidth = 160;
+                const toolHeight = 80;
+                let left = param.point.x + 20;
+                let top = param.point.y + 20;
+
+                if (left > chartContainerRef.current.clientWidth - toolWidth) {
+                    left = param.point.x - toolWidth - 20;
+                }
+                if (top > chartContainerRef.current.clientHeight - toolHeight) {
+                    top = param.point.y - toolHeight - 20;
+                }
+
+                tooltipRef.current.style.left = left + 'px';
+                tooltipRef.current.style.top = top + 'px';
+            } else {
+                tooltipRef.current.style.display = 'none';
+            }
+        }
+    });
 
     const resizeObserver = new ResizeObserver(entries => {
         if (!chartRef.current || entries.length === 0 || !entries[0].contentRect) return;
@@ -188,6 +245,13 @@ const Chart: React.FC<ChartProps> = ({
       },
       localization: {
         priceFormatter: (price: number) => price.toFixed(asset.pipDecimal),
+        timeFormatter: (time: number) => {
+            const date = new Date(time * 1000);
+            const day = date.toLocaleDateString('en-US', { weekday: 'short' });
+            const dateStr = date.toISOString().split('T')[0];
+            const timeStr = date.getUTCHours().toString().padStart(2, '0') + ':' + date.getUTCMinutes().toString().padStart(2, '0');
+            return `${day}, ${dateStr} ${timeStr}`;
+        }
       },
     });
   }, [chartTheme, chartSettings.showGrid, asset.pipDecimal]);
@@ -245,7 +309,7 @@ const Chart: React.FC<ChartProps> = ({
         series.setData(visibleData);
     }
     
-  }, [chartType, asset.pipDecimal, asset.tickSize]); // Trigger on asset changes too
+  }, [chartType, asset.pipDecimal, asset.tickSize]); 
 
   // 4. SERIES THEME UPDATES
   useEffect(() => {
@@ -280,7 +344,7 @@ const Chart: React.FC<ChartProps> = ({
     }
   }, [data, replayIndex, getChartData]);
 
-  // --- INTERACTIVE LINES LOGIC (DRAG & DROP) ---
+  // --- INTERACTIVE LINES LOGIC ---
   useEffect(() => {
       const container = chartContainerRef.current;
       if (!container || !mainSeriesRef.current) return;
@@ -293,20 +357,16 @@ const Chart: React.FC<ChartProps> = ({
           const price = mainSeriesRef.current.coordinateToPrice(y);
           if (price === null) return;
 
-          // Check Positions
           for (const p of positions) {
-              if (p.status === 'CLOSED') continue; // Don't drag closed positions
-              if (hiddenTradeIds.has(p.id)) continue; // Don't interact with hidden trades
+              if (p.status === 'CLOSED') continue; 
+              if (hiddenTradeIds.has(p.id)) continue; 
               
               const checkLine = (targetPrice: number | undefined, type: 'entry' | 'sl' | 'tp') => {
                   if (targetPrice === undefined) return false;
                   const targetY = mainSeriesRef.current!.priceToCoordinate(targetPrice);
-                  if (targetY !== null && Math.abs(targetY - y) < 8) { // 8px tolerance
-                      // Only allow dragging Entry if Pending
+                  if (targetY !== null && Math.abs(targetY - y) < 8) {
                       if (type === 'entry' && p.status !== 'PENDING') return false;
-                      
                       draggingState.current = { active: true, type: 'POSITION', id: p.id, lineType: type, startPrice: price };
-                      // Disable scrolling while dragging
                       chartRef.current!.applyOptions({ handleScroll: false, handleScale: false });
                       return true;
                   }
@@ -318,7 +378,6 @@ const Chart: React.FC<ChartProps> = ({
               if (checkLine(p.entryPrice, 'entry')) return;
           }
 
-          // Check Visual Tool
           if (visualTool?.active) {
                const checkVisual = (targetPrice: number, type: 'entry' | 'sl' | 'tp') => {
                   const targetY = mainSeriesRef.current!.priceToCoordinate(targetPrice);
@@ -340,13 +399,11 @@ const Chart: React.FC<ChartProps> = ({
           const rect = container.getBoundingClientRect();
           const y = e.clientY - rect.top;
           
-          // CURSOR HOVER LOGIC
           if (!draggingState.current?.active) {
               let hovering = false;
               const price = mainSeriesRef.current.coordinateToPrice(y);
               
               if (price) {
-                  // Check Positions
                   positions.forEach(p => {
                       if (p.status === 'CLOSED') return;
                       if (hiddenTradeIds.has(p.id)) return;
@@ -356,7 +413,6 @@ const Chart: React.FC<ChartProps> = ({
                           if (ly !== null && Math.abs(ly - y) < 8) hovering = true;
                       });
                   });
-                  // Check Visual Tool
                   if (visualTool?.active) {
                       [visualTool.entry, visualTool.sl, visualTool.tp].forEach(val => {
                           const ly = mainSeriesRef.current!.priceToCoordinate(val);
@@ -368,7 +424,6 @@ const Chart: React.FC<ChartProps> = ({
               return;
           }
 
-          // DRAGGING LOGIC
           const newPrice = mainSeriesRef.current.coordinateToPrice(y);
           if (newPrice === null) return;
           
@@ -399,7 +454,6 @@ const Chart: React.FC<ChartProps> = ({
       const handleMouseUp = () => {
           if (draggingState.current?.active) {
               draggingState.current = null;
-              // Re-enable scrolling
               chartRef.current?.applyOptions({ handleScroll: { mouseWheel: true, pressedMouseMove: true }, handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true } });
           }
       };
@@ -416,16 +470,14 @@ const Chart: React.FC<ChartProps> = ({
   }, [positions, visualTool, pipDecimal, chartSettings, activeDrawingTool, hiddenTradeIds]);
 
 
-  // --- POSITION PRICE LINES (RENDER & UPDATE) ---
+  // --- POSITION PRICE LINES ---
   useEffect(() => {
       if (!mainSeriesRef.current) return;
       
       const activeIds = new Set(positions.map(p => p.id));
       const formatMoney = (val: number) => `$${Math.abs(val).toFixed(2)}`;
 
-      // Cleanup orphan lines
       for (const [id, lines] of activePositionLinesRef.current.entries()) {
-          // If position deleted OR hidden, remove lines
           if (!activeIds.has(id) || hiddenTradeIds.has(id)) { 
               if (lines.sl) { try { mainSeriesRef.current.removePriceLine(lines.sl); } catch(e){} }
               if (lines.tp) { try { mainSeriesRef.current.removePriceLine(lines.tp); } catch(e){} }
@@ -436,7 +488,7 @@ const Chart: React.FC<ChartProps> = ({
       }
 
       positions.forEach(p => {
-          if (hiddenTradeIds.has(p.id)) return; // Skip rendering hidden positions
+          if (hiddenTradeIds.has(p.id)) return; 
 
           let lines = activePositionLinesRef.current.get(p.id) || {};
           if (!activePositionLinesRef.current.has(p.id)) activePositionLinesRef.current.set(p.id, lines);
@@ -469,7 +521,6 @@ const Chart: React.FC<ChartProps> = ({
           };
 
           if (isClosed) {
-              // Only show closed lines if highlighted to reduce clutter
               if (isHighlighted) {
                   syncLine('entry', p.entryPrice, '#787b86', LineStyle.Dotted, `OPEN ${p.type}`, 1);
                   syncLine('exit', p.exitPrice, '#a855f7', LineStyle.Solid, `CLOSE ${p.closedPnl && p.closedPnl>0 ? '+' : ''}$${Math.round(p.closedPnl||0)}`, 2);
@@ -480,7 +531,6 @@ const Chart: React.FC<ChartProps> = ({
               syncLine('sl', undefined, '', 0, '', 0);
               syncLine('tp', undefined, '', 0, '', 0);
           } else {
-              // Open/Pending Visualization
               const size = p.size;
               let slText = "SL";
               let tpText = "TP";
@@ -506,11 +556,10 @@ const Chart: React.FC<ChartProps> = ({
   }, [positions, data, asset.contractSize, highlightedPositionId, chartType, hiddenTradeIds]); 
 
 
-  // --- HIGHLIGHTED TRADE CONNECTOR (ENTRY TO EXIT) ---
+  // --- HIGHLIGHTED TRADE CONNECTOR ---
   useEffect(() => {
     if (!chartRef.current) return;
     
-    // Lazy initialization of connector series
     if (!connectorSeriesRef.current) {
         try {
             connectorSeriesRef.current = chartRef.current.addLineSeries({
@@ -529,7 +578,6 @@ const Chart: React.FC<ChartProps> = ({
 
     const p = positions.find(pos => pos.id === highlightedPositionId);
     
-    // Check if hidden or non-existent
     if (p && !hiddenTradeIds.has(p.id) && (p.status === 'CLOSED' || p.status === 'OPEN')) {
         const startTime = (p.entryTime / 1000) as Time;
         let endTime: Time;
@@ -539,16 +587,13 @@ const Chart: React.FC<ChartProps> = ({
             endTime = (p.exitTime / 1000) as Time;
             exitPrice = p.exitPrice!;
         } else {
-            // If OPEN, connect to current price candle
             const currentCandle = data[replayIndex];
             if (!currentCandle) { series.setData([]); return; }
             endTime = (currentCandle.time / 1000) as Time;
             exitPrice = currentPrice;
         }
 
-        // Validate time order (LW charts requires strict time order for LineSeries)
         if (startTime < endTime) {
-            // Determine color based on Profit/Loss
             let isWin = false;
             if (p.status === 'CLOSED') isWin = (p.closedPnl || 0) >= 0;
             else {
@@ -562,11 +607,9 @@ const Chart: React.FC<ChartProps> = ({
                 { time: endTime, value: exitPrice }
             ]);
         } else {
-            // Cannot draw line if start == end or invalid
             series.setData([]);
         }
     } else {
-        // Clear if no highlighted trade or pending or hidden
         series.setData([]);
     }
   }, [highlightedPositionId, positions, replayIndex, currentPrice, data, hiddenTradeIds]);
@@ -613,7 +656,7 @@ const Chart: React.FC<ChartProps> = ({
 
       const markers: any[] = [];
       positions.forEach(p => {
-          if (hiddenTradeIds.has(p.id)) return; // Skip hidden markers
+          if (hiddenTradeIds.has(p.id)) return; 
 
           if (p.entryTime) {
               markers.push({
@@ -661,6 +704,27 @@ const Chart: React.FC<ChartProps> = ({
   return (
     <div className="relative w-full h-full">
         <div ref={chartContainerRef} className="w-full h-full" />
+        
+        {/* NEW: Professional Tooltip Overlay */}
+        <div 
+            ref={tooltipRef}
+            style={{
+                display: 'none',
+                position: 'absolute',
+                zIndex: 50,
+                pointerEvents: 'none',
+                padding: '12px',
+                borderRadius: '8px',
+                border: theme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                background: theme === 'dark' ? 'rgba(30, 34, 45, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+                color: theme === 'dark' ? '#d1d4dc' : '#131722',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
+                width: '160px',
+                backdropFilter: 'blur(4px)',
+                transition: 'opacity 0.1s ease'
+            }}
+        />
+
         {data.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                 <div className="bg-black/50 text-white px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest backdrop-blur-sm">
